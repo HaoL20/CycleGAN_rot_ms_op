@@ -285,7 +285,7 @@ if __name__ == '__main__':
     Dis = Discriminator(input_nc=3)
     gan_logits, rot_logits = Dis(input)
     print(rot_logits.shape)
-    print(rot_logits)
+    print(rot_logits,gan_logits )
     # criterion_GAN = torch.nn.MSELoss()
     #
     # # target_real = Variable(Tensor(4).fill_(1.0), requires_grad=False)

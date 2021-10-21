@@ -60,3 +60,10 @@ python test_single.py --dataroot /home/lyc/code/HaoL/LDH/dataset/dataset/syn_fog
 python test_single.py --dataroot /home/lyc/data/HaoL/GAN/Cityscape_day_foy/val/补充B/ --save_dir /home/lyc/data/HaoL/GAN/Cityscape_day_foy/val/B_2sunny --model_dir /home/lyc/code/HaoL/LDH/CycleGAN+旋转损失+多尺度鉴别器+OP/exp/city_sunny2foogy_resize1024_512_cropsize400_bs2_foggybata0.01/output/ --which_epoch 99 --cuda --direction B2A
 ## syn_night2day
 python test_single.py --dataroot /home/lyc/code/HaoL/LDH/dataset/dataset/syn_night/RGB/ --save_dir /home/lyc/code/HaoL/LDH/CycleGAN+旋转损失+多尺度鉴别器+OP/exp/S_D2N_100e_400_upsamp/syn_night2day_99e --model_dir /home/lyc/code/HaoL/LDH/CycleGAN+旋转损失+多尺度鉴别器+OP/exp/S_D2N_100e_400_upsamp/output/ --which_epoch 99 --cuda --direction B2A
+
+
+## 消融实验
+
+python train.py --cuda --batchSize 1 --size 400 \
+--decay_epoch 50 --n_epochs 100 --use_rot \
+--dataroot /home/lyc/data/ll/dataset/gta2cityscapes_scale_width/ --exp_name gta2city_100e_512_upsamp_use_rot

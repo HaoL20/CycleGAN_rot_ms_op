@@ -10,12 +10,12 @@ from PIL import Image
 class ImageDataset(Dataset):
     def __init__(self, root, transforms_=None, mode='train'):
         self.transform = transforms.Compose(transforms_)
-        self.x_imgs = sorted(glob.glob(os.path.join(root, '%s/A(12_images)' % mode) + '/*.*'))
-        self.y_imgs = sorted(glob.glob(os.path.join(root, '%s/B(12_images)' % mode) + '/*.*'))
+        self.x_imgs = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))
+        self.y_imgs = sorted(glob.glob(os.path.join(root, '%s/B' % mode) + '/*.*'))
         self.A_size = len(self.x_imgs)
         self.B_size = len(self.y_imgs)
-        # print(self.B_size)
-        # print(self.A_size)
+        print(self.B_size)
+        print(self.A_size)
         self.mode = mode
         # random.shuffle(self.x_imgs)
         # random.shuffle(self.y_imgs)

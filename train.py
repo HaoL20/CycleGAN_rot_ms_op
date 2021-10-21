@@ -92,8 +92,8 @@ if torch.cuda.is_available() and not opt.cuda:
 # Networks
 netG_A2B = Generator()
 netG_B2A = Generator()
-netD_A = Discriminator(opt.use_rot, opt.use_ms)
-netD_B = Discriminator(opt.use_rot, opt.use_ms)
+netD_A = Discriminator(opt.input_nc, opt.use_rot, opt.use_ms)
+netD_B = Discriminator(opt.input_nc, opt.use_rot, opt.use_ms)
 if opt.use_op:
     net_OP = OPNet()
 # vgg = load_vgg16('./vgg_models/')
@@ -150,7 +150,7 @@ fake_A_pool = ImagePool()
 fake_B_pool = ImagePool()
 
 # Dataset loader
-transforms_ = [transforms.Resize(1024, 512),
+transforms_ = [#transforms.Resize((1024, 512)), # 用了scale_width的数据后，就不用resize了
                transforms.RandomCrop(opt.size),
                transforms.RandomHorizontalFlip(),
                transforms.ToTensor(),
