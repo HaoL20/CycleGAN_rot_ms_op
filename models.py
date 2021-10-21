@@ -22,7 +22,7 @@ class ResidualBlock(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, input_nc = 3, output_nc = 3, n_residual_blocks=9):
+    def __init__(self, input_nc=3, output_nc=3, n_residual_blocks=9):
         super(Generator, self).__init__()
         gf_dim = 64
         self.iniBlock = nn.Sequential(nn.ReflectionPad2d(3),
@@ -66,63 +66,88 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, input_nc = 3):
+    def __init__(self, input_nc=3, use_rot=True, use_ms=True):
+        # use_rot：是否使用旋转损失
+        # use_ms:是否使用多尺度
         super(Discriminator, self).__init__()
+        self.use_rot = use_rot
+        self.use_ms = use_ms
+        self.channel_time = 2 if self.use_ms else 1  # 多尺度有cat的操作，通道会变成2倍
 
-        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
-        self.rgb_to_feat_2 = nn.Conv2d(3, 64, 1)
-        self.rgb_to_feat_4 = nn.Conv2d(3, 128, 1)
-        self.rgb_to_feat_8 = nn.Conv2d(3, 256, 1)
+        if self.use_ms:
+            self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+            self.rgb_to_feat_2 = nn.Conv2d(3, 64, 1)
+            self.rgb_to_feat_4 = nn.Conv2d(3, 128, 1)
+            self.rgb_to_feat_8 = nn.Conv2d(3, 256, 1)
 
         self.layer_1 = nn.Sequential(nn.Conv2d(input_nc, 64, 4, stride=2, padding=1),
                                      nn.LeakyReLU(0.2, inplace=True))
 
-        self.layer_2 = nn.Sequential(nn.Conv2d(64 * 2, 128, 4, stride=2, padding=1),
+        self.layer_2 = nn.Sequential(nn.Conv2d(64 * self.channel_time, 128, 4, stride=2, padding=1),
                                      nn.InstanceNorm2d(128),
                                      nn.LeakyReLU(0.2, inplace=True))
 
-        self.layer_3 = nn.Sequential(nn.Conv2d(128 * 2, 256, 4, stride=2, padding=1),
+        self.layer_3 = nn.Sequential(nn.Conv2d(128 * self.channel_time, 256, 4, stride=2, padding=1),
                                      nn.InstanceNorm2d(256),
                                      nn.LeakyReLU(0.2, inplace=True))
 
-        self.layer_4 = nn.Sequential(nn.Conv2d(256 * 2, 512, 4, padding=1),
+        self.layer_4 = nn.Sequential(nn.Conv2d(256 * self.channel_time, 512, 4, padding=1),
                                      nn.InstanceNorm2d(512),
                                      nn.LeakyReLU(0.2, inplace=True))
 
         # FCN classification layer for gan(True False)
         self.gan_cls = nn.Conv2d(512, 1, 4, padding=1)
 
-        # FCN classification layer for Rotation(0° 90° 180° 270°)
-        self.rot_cls = nn.Conv2d(512, 4, 4, padding=1)
-        # self.rot_cls = nn.Linear(512, 4)
+        if self.use_rot:
+            # FCN classification layer for Rotation(0° 90° 180° 270°)
+            self.rot_cls = nn.Conv2d(512, 4, 4, padding=1)
+            # self.rot_cls = nn.Linear(512, 4)
 
     def forward(self, input):
-        # 下采样
-        input_down_2 = self.downsample(input)
-        input_down_4 = self.downsample(input_down_2)
-        input_down_8 = self.downsample(input_down_4)
+        if self.use_ms:
+            # 下采样
+            input_down_2 = self.downsample(input)
+            input_down_4 = self.downsample(input_down_2)
+            input_down_8 = self.downsample(input_down_4)
 
-        # 通道对齐
-        input_down_feat_1 = self.rgb_to_feat_2(input_down_2)
-        input_down_feat_2 = self.rgb_to_feat_4(input_down_4)
-        input_down_feat_3 = self.rgb_to_feat_8(input_down_8)
+            # 通道对齐
+            input_down_feat_1 = self.rgb_to_feat_2(input_down_2)
+            input_down_feat_2 = self.rgb_to_feat_4(input_down_4)
+            input_down_feat_3 = self.rgb_to_feat_8(input_down_8)
 
+        ## feat_1
         feat_1 = self.layer_1(input)
-        feat_cat_1 = torch.cat([feat_1, input_down_feat_1], dim=1)
+        if self.use_ms:
+            feat_cat_1 = torch.cat([feat_1, input_down_feat_1], dim=1)
+        else:
+            feat_cat_1 = feat_1
 
+        ## feat_2
         feat_2 = self.layer_2(feat_cat_1)
-        feat_cat_2 = torch.cat([feat_2, input_down_feat_2], dim=1)
+        if self.use_ms:
+            feat_cat_2 = torch.cat([feat_2, input_down_feat_2], dim=1)
+        else:
+            feat_cat_2 = feat_2
 
+        ## feat_3
         feat_3 = self.layer_3(feat_cat_2)
-        feat_cat_3 = torch.cat([feat_3, input_down_feat_3], dim=1)
+        if self.use_ms:
+            feat_cat_3 = torch.cat([feat_3, input_down_feat_3], dim=1)
+        else:
+            feat_cat_3 = feat_3
 
+        ## feat_4
         feat_4 = self.layer_4(feat_cat_3)
 
+        # 头部
         gan = self.gan_cls(feat_4)
-        rot = self.rot_cls(feat_4)
 
-        # gan_logits = F.avg_pool2d(gan, gan.size()[2:]).view(gan.size()[0], -1)
-        rot_logits = F.avg_pool2d(rot, rot.size()[2:]).view(rot.size()[0], -1)
+        if self.use_rot:
+            rot = self.rot_cls(feat_4)
+            # gan_logits = F.avg_pool2d(gan, gan.size()[2:]).view(gan.size()[0], -1)
+            rot_logits = F.avg_pool2d(rot, rot.size()[2:]).view(rot.size()[0], -1)
+        else:
+            rot_logits = None
 
         return gan, rot_logits
 
@@ -143,8 +168,8 @@ class OPNet(nn.Module):
         # pathB = get_path(imgB.detach(), pathB_idx)
         cA = self.content_encoder(pathA)
         cB = self.content_encoder(pathB)
-        sA = self.style_encoder(imgA)   # 1, 512, 1, 1
-        sB = self.style_encoder(imgB)   # 1, 512, 1, 1
+        sA = self.style_encoder(imgA)  # 1, 512, 1, 1
+        sB = self.style_encoder(imgB)  # 1, 512, 1, 1
 
         pA = F.interpolate(self.content_branch(cA), size=pathA.shape[2:])
         pB = F.interpolate(self.content_branch(cB), size=pathB.shape[2:])
@@ -253,6 +278,7 @@ class Vgg16(nn.Module):
 
         return relu5_3
         # return [relu1_2, relu2_2, relu3_3, relu4_3]
+
 
 if __name__ == '__main__':
     input = torch.rand((4 * 1, 3, 256, 256))

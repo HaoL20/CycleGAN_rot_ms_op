@@ -46,6 +46,9 @@ parser.add_argument('--size', type=int, default=400, help='size of the data crop
 parser.add_argument('--input_nc', type=int, default=3, help='number of channels of input data')
 parser.add_argument('--output_nc', type=int, default=3, help='number of channels of output data')
 parser.add_argument('--cuda', action='store_true', help='use GPU computation')
+parser.add_argument('--use_op', action='store_true', help='use GPU computation')
+parser.add_argument('--use_rot', action='store_true', help='use GPU computation')
+parser.add_argument('--use_ms', action='store_true', help='use GPU computation')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
 parser.add_argument('--exp_name', type=str, default='SYN_sun2fog_100e_400_upsamp', help='exp_name')
 parser.add_argument('--cpk_dir', type=str, default='exp/1/output',
@@ -89,9 +92,10 @@ if torch.cuda.is_available() and not opt.cuda:
 # Networks
 netG_A2B = Generator()
 netG_B2A = Generator()
-netD_A = Discriminator()
-netD_B = Discriminator()
-net_OP = OPNet()
+netD_A = Discriminator(opt.use_rot, opt.use_ms)
+netD_B = Discriminator(opt.use_rot, opt.use_ms)
+if opt.use_op:
+    net_OP = OPNet()
 # vgg = load_vgg16('./vgg_models/')
 # vgg.eval()
 # for param in vgg.parameters():
@@ -102,14 +106,16 @@ if opt.cuda:
     netG_B2A.cuda()
     netD_A.cuda()
     netD_B.cuda()
-    net_OP.cuda()
+    if opt.use_op:
+        net_OP.cuda()
     # vgg.cuda()
 
 netG_A2B.apply(weights_init_normal)
 netG_B2A.apply(weights_init_normal)
 netD_A.apply(weights_init_normal)
 netD_B.apply(weights_init_normal)
-net_OP.apply(weights_init_normal)
+if opt.use_op:
+    net_OP.apply(weights_init_normal)
 
 # Lossess
 criterion_GAN = GANLoss('lsgan').cuda()
@@ -123,14 +129,17 @@ criterion_content = torch.nn.MSELoss()
 optimizer_G = torch.optim.Adam(itertools.chain(netG_A2B.parameters(), netG_B2A.parameters()), lr=opt.lr,
                                betas=(0.5, 0.999))
 optimizer_D = torch.optim.Adam(itertools.chain(netD_A.parameters(), netD_B.parameters()), lr=opt.lr, betas=(0.5, 0.999))
-optimizer_OP = torch.optim.Adam(net_OP.parameters(), lr=opt.lr, betas=(0.5, 0.999))
+if opt.use_op:
+    optimizer_OP = torch.optim.Adam(net_OP.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
 lr_scheduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G,
                                                    lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 lr_scheduler_D = torch.optim.lr_scheduler.LambdaLR(optimizer_D,
                                                    lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
-lr_scheduler_OP = torch.optim.lr_scheduler.LambdaLR(optimizer_OP,
-                                                    lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
+if opt.use_op:
+    lr_scheduler_OP = torch.optim.lr_scheduler.LambdaLR(optimizer_OP,
+                                                        lr_lambda=LambdaLR(opt.n_epochs, opt.epoch,
+                                                                           opt.decay_epoch).step)
 
 # Inputs & targets memory allocation
 Tensor = torch.cuda.FloatTensor if opt.cuda else torch.Tensor
@@ -173,17 +182,26 @@ for epoch in range(opt.epoch, opt.n_epochs):
         rec_B = netG_A2B(fake_A)
 
         ###### Rotation ######
-        real_A_all, real_A_all_label = Rotation(real_A)
-        real_B_all, real_B_all_label = Rotation(real_B)
-        fake_A_all, fake_A_all_label = Rotation(fake_A)
-        fake_B_all, fake_B_all_label = Rotation(fake_B)
-
+        if opt.use_rot:
+            real_A_all, real_A_all_label = Rotation(real_A)
+            real_B_all, real_B_all_label = Rotation(real_B)
+            fake_A_all, fake_A_all_label = Rotation(fake_A)
+            fake_B_all, fake_B_all_label = Rotation(fake_B)
+        else:
+            real_A_all = real_A
+            real_B_all = real_B
+            fake_A_all = fake_A
+            fake_B_all = fake_B
         ###### save fake_A, fake_B for visdom
         fake_A_tmp = fake_A
         fake_B_tmp = fake_B
 
         ############# G_A and G_B  #################
-        set_requires_grad([netD_A, netD_B, net_OP], False)  # Ds require no gradients when optimizing Gs
+        if opt.use_op:
+            set_requires_grad([netD_A, netD_B, net_OP], False)  # Ds require no gradients when optimizing Gs
+        else:
+            set_requires_grad([netD_A, netD_B], False)  # Ds require no gradients when optimizing Gs
+
         optimizer_G.zero_grad()  # set G_A2B and G_B2A 's gradients to zero
 
         lambda_idt = 0.5
@@ -223,48 +241,50 @@ for epoch in range(opt.epoch, opt.n_epochs):
         optimizer_G.step()  # update G_A and G_B's weights
 
         ############# OP-GAN  #################
-        set_requires_grad([net_OP], True)
-        optimizer_OP.zero_grad()
+        if opt.use_op:
+            set_requires_grad([net_OP], True)
+            optimizer_OP.zero_grad()
 
-        lambda_OP = 0.1
-        grid_size = 3
-        paths_num = grid_size * grid_size
-        paths_pool_size = paths_num * 2
-        iteration_t = 8
+            lambda_OP = 0.1
+            grid_size = 3
+            paths_num = grid_size * grid_size
+            paths_pool_size = paths_num * 2
+            iteration_t = 8
 
 
-        def update_OP(img_A, img_B):
-            loss_OP_style = 0
-            loss_OP_content = 0
-            for t in range(iteration_t):
-                idx_1, idx_2 = random.sample(range(0, paths_pool_size), 2)
-                path_1, img_1, domain_1, pos_1 = get_path(img_A, img_B, idx_1, grid_size=grid_size)
-                path_2, img_2, domain_2, pos_2 = get_path(img_A, img_B, idx_2, grid_size=grid_size)
-                if domain_1 == domain_2:
-                    if domain_1 == 'A':
-                        cls_label = torch.tensor([0]).cuda()
+            def update_OP(img_A, img_B):
+                loss_OP_style = 0
+                loss_OP_content = 0
+                for t in range(iteration_t):
+                    idx_1, idx_2 = random.sample(range(0, paths_pool_size), 2)
+                    path_1, img_1, domain_1, pos_1 = get_path(img_A, img_B, idx_1, grid_size=grid_size)
+                    path_2, img_2, domain_2, pos_2 = get_path(img_A, img_B, idx_2, grid_size=grid_size)
+                    if domain_1 == domain_2:
+                        if domain_1 == 'A':
+                            cls_label = torch.tensor([0]).cuda()
+                        else:
+                            cls_label = torch.tensor([1]).cuda()
                     else:
-                        cls_label = torch.tensor([1]).cuda()
-                else:
-                    cls_label = torch.tensor([2]).cuda()
+                        cls_label = torch.tensor([2]).cuda()
 
-                cls_label = cls_label.repeat_interleave(repeats=img_A.shape[0], dim=0)
-                p_1, p_2, domain_cls = net_OP(img_1, img_2, path_1, path_2)
-                loss_OP_style += criterion_style(domain_cls, cls_label)
-                if pos_1 == pos_2:
-                    loss_OP_content += criterion_content(p_1, p_2)
-            return loss_OP_style, loss_OP_content
+                    cls_label = cls_label.repeat_interleave(repeats=img_A.shape[0], dim=0)
+                    p_1, p_2, domain_cls = net_OP(img_1, img_2, path_1, path_2)
+                    loss_OP_style += criterion_style(domain_cls, cls_label)
+                    if pos_1 == pos_2:
+                        loss_OP_content += criterion_content(p_1, p_2)
+                return loss_OP_style, loss_OP_content
 
 
-        # A-B
-        loss_OP_style_AB, loss_OP_content_AB = update_OP(real_A, fake_B)
-        # B-A
-        loss_OP_style_BA, loss_OP_content_BA = update_OP(fake_A, real_B)
+            # A-B
+            loss_OP_style_AB, loss_OP_content_AB = update_OP(real_A, fake_B)
+            # B-A
+            loss_OP_style_BA, loss_OP_content_BA = update_OP(fake_A, real_B)
 
-        loss_OP = (loss_OP_style_AB + loss_OP_content_AB + loss_OP_style_BA + loss_OP_content_BA) * lambda_OP
-        loss_OP.backward()
-        optimizer_OP.step()
-
+            loss_OP = (loss_OP_style_AB + loss_OP_content_AB + loss_OP_style_BA + loss_OP_content_BA) * lambda_OP
+            loss_OP.backward()
+            optimizer_OP.step()
+        else:
+            loss_OP = 0
         ############# D_A and D_B  #################
         set_requires_grad([netD_A, netD_B], True)
         optimizer_D.zero_grad()  # set D_A and D_B's gradients to zero
@@ -272,7 +292,10 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # -------------------- DA --------------------
         # get and Rotation fake_A
         fake_A = fake_A_pool.query(fake_A)
-        fake_A_all, fake_A_all_label = Rotation(fake_A)
+        if opt.use_rot:
+            fake_A_all, fake_A_all_label = Rotation(fake_A)
+        else:
+            fake_A_all = fake_A
         # forward
         pre_real_A_all, rot_real_A_all = netD_A(real_A_all)
         pre_fake_A_all, rot_fake_A_all = netD_A(fake_A_all.detach())
@@ -283,9 +306,12 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_D_A_GAN = loss_D_real_A + loss_D_fake_A
 
         # loss_D_A_rot
-        loss_D_real_A_rot = criterion_rot(rot_real_A_all, real_A_all_label)
-        loss_D_fake_A_rot = criterion_rot(rot_fake_A_all, fake_A_all_label)
-        loss_D_A_rot = loss_D_real_A_rot + loss_D_fake_A_rot
+        if opt.use_rot:
+            loss_D_real_A_rot = criterion_rot(rot_real_A_all, real_A_all_label)
+            loss_D_fake_A_rot = criterion_rot(rot_fake_A_all, fake_A_all_label)
+            loss_D_A_rot = loss_D_real_A_rot + loss_D_fake_A_rot
+        else:
+            loss_D_A_rot = 0
 
         # loss_D_A
         loss_D_A = (loss_D_A_GAN + loss_D_A_rot) * 0.5
@@ -296,7 +322,10 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # -------------------- DB --------------------
         # get and Rotation fake_B
         fake_B = fake_B_pool.query(fake_B)
-        fake_B_all, fake_B_all_label = Rotation(fake_B)
+        if opt.use_rot:
+            fake_B_all, fake_B_all_label = Rotation(fake_B)
+        else:
+            fake_B_all = fake_B
         # forward
         pre_real_B_all, rot_real_B_all = netD_B(real_B_all)
         pre_fake_B_all, rot_fake_B_all = netD_B(fake_B_all.detach())
@@ -307,9 +336,12 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_D_B_GAN = loss_D_real_B + loss_D_fake_B
 
         # loss_D_B_rot
-        loss_D_real_B_rot = criterion_rot(rot_real_B_all, real_B_all_label)
-        loss_D_fake_B_rot = criterion_rot(rot_fake_B_all, fake_B_all_label)
-        loss_D_B_rot = loss_D_real_B_rot + loss_D_fake_B_rot
+        if opt.use_rot:
+            loss_D_real_B_rot = criterion_rot(rot_real_B_all, real_B_all_label)
+            loss_D_fake_B_rot = criterion_rot(rot_fake_B_all, fake_B_all_label)
+            loss_D_B_rot = loss_D_real_B_rot + loss_D_fake_B_rot
+        else:
+            loss_D_B_rot = 0
 
         # loss_D_B
         loss_D_B = (loss_D_B_GAN + loss_D_B_rot) * 0.5
@@ -360,7 +392,8 @@ for epoch in range(opt.epoch, opt.n_epochs):
     # Update learning rates
     lr_scheduler_G.step()
     lr_scheduler_D.step()
-    lr_scheduler_OP.step()
+    if opt.use_op:
+        lr_scheduler_OP.step()
     # Save models checkpoints
     torch.save(netG_A2B.state_dict(), os.path.join(opt.cpk_dir, 'netG_A2B_{}.pth'.format(epoch)))
     torch.save(netG_B2A.state_dict(), os.path.join(opt.cpk_dir, 'netG_B2A_{}.pth'.format(epoch)))
