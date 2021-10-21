@@ -360,7 +360,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
     # Update learning rates
     lr_scheduler_G.step()
     lr_scheduler_D.step()
-
+    lr_scheduler_OP.step()
     # Save models checkpoints
     torch.save(netG_A2B.state_dict(), os.path.join(opt.cpk_dir, 'netG_A2B_{}.pth'.format(epoch)))
     torch.save(netG_B2A.state_dict(), os.path.join(opt.cpk_dir, 'netG_B2A_{}.pth'.format(epoch)))
