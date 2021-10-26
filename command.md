@@ -64,6 +64,17 @@ python test_single.py --dataroot /home/lyc/code/HaoL/LDH/dataset/dataset/syn_nig
 
 ## 消融实验
 
+# use_rot use_ms
 python train.py --cuda --batchSize 1 --size 400 \
---decay_epoch 50 --n_epochs 100 --use_rot \
---dataroot /home/lyc/data/ll/dataset/gta2cityscapes_scale_width/ --exp_name gta2city_100e_512_upsamp_use_rot
+--decay_epoch 50 --n_epochs 100 --use_rot --use_ms \
+--dataroot /home/haol/data/Dataset/风格迁移数据集/gta2cityscapes_1024_512 --exp_name gta2city_100e_400_upsamp_use_rot__use_ms
+
+# use_op （h和w 反了）
+python train.py --cuda --batchSize 1 --size 400 \
+--decay_epoch 50 --n_epochs 100 --use_op \
+--dataroot /home/haol/data/Dataset/风格迁移数据集/gta2cityscapes --exp_name gta2city_100e_512_upsamp_use_op
+
+# use_op use_ms
+python train.py --cuda --batchSize 1 --size 400 \
+--decay_epoch 50 --n_epochs 100 --use_op --use_ms \
+--dataroot /home/haol/data/Dataset/风格迁移数据集/gta2cityscapes --exp_name gta2city_100e_512_upsamp_use_op_use_ms

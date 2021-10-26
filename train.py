@@ -150,7 +150,8 @@ fake_A_pool = ImagePool()
 fake_B_pool = ImagePool()
 
 # Dataset loader
-transforms_ = [#transforms.Resize((1024, 512)), # 用了scale_width的数据后，就不用resize了
+transforms_ = [# transforms.Resize((1024, 512)),  # 用了scale_width的数据后，就不用resize了
+                # transforms.Resize((512，1024)),  # transforms.Resize是h x w的形式
                transforms.RandomCrop(opt.size),
                transforms.RandomHorizontalFlip(),
                transforms.ToTensor(),
@@ -284,7 +285,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
             loss_OP.backward()
             optimizer_OP.step()
         else:
-            loss_OP = 0
+            loss_OP = torch.tensor(0.)
         ############# D_A and D_B  #################
         set_requires_grad([netD_A, netD_B], True)
         optimizer_D.zero_grad()  # set D_A and D_B's gradients to zero
@@ -311,7 +312,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
             loss_D_fake_A_rot = criterion_rot(rot_fake_A_all, fake_A_all_label)
             loss_D_A_rot = loss_D_real_A_rot + loss_D_fake_A_rot
         else:
-            loss_D_A_rot = 0
+            loss_D_A_rot = torch.tensor(0.)
 
         # loss_D_A
         loss_D_A = (loss_D_A_GAN + loss_D_A_rot) * 0.5
@@ -341,7 +342,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
             loss_D_fake_B_rot = criterion_rot(rot_fake_B_all, fake_B_all_label)
             loss_D_B_rot = loss_D_real_B_rot + loss_D_fake_B_rot
         else:
-            loss_D_B_rot = 0
+            loss_D_B_rot = torch.tensor(0.)
 
         # loss_D_B
         loss_D_B = (loss_D_B_GAN + loss_D_B_rot) * 0.5
