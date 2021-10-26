@@ -396,8 +396,9 @@ for epoch in range(opt.epoch, opt.n_epochs):
     if opt.use_op:
         lr_scheduler_OP.step()
     # Save models checkpoints
-    torch.save(netG_A2B.state_dict(), os.path.join(opt.cpk_dir, 'netG_A2B_{}.pth'.format(epoch)))
-    torch.save(netG_B2A.state_dict(), os.path.join(opt.cpk_dir, 'netG_B2A_{}.pth'.format(epoch)))
-    torch.save(netD_A.state_dict(), os.path.join(opt.cpk_dir, 'netD_A_{}.pth'.format(epoch)))
-    torch.save(netD_B.state_dict(), os.path.join(opt.cpk_dir, 'netD_B_{}.pth'.format(epoch)))
+    if epoch > 20:
+        torch.save(netG_A2B.state_dict(), os.path.join(opt.cpk_dir, 'netG_A2B_{}.pth'.format(epoch)))
+        torch.save(netG_B2A.state_dict(), os.path.join(opt.cpk_dir, 'netG_B2A_{}.pth'.format(epoch)))
+        # torch.save(netD_A.state_dict(), os.path.join(opt.cpk_dir, 'netD_A_{}.pth'.format(epoch)))
+        # torch.save(netD_B.state_dict(), os.path.join(opt.cpk_dir, 'netD_B_{}.pth'.format(epoch)))
 ###################################
